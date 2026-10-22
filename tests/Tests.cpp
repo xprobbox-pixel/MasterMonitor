@@ -45,6 +45,8 @@ void communication(){
  p->analysis.reset();for(int i=0;i<200;++i){if(p->analysis.snapshot().seconds==0)break;std::this_thread::sleep_for(std::chrono::milliseconds(5));}check(p->analysis.snapshot().seconds==0,"measurement reset publishes while transport idle");p->releaseResources();
 }
 void editorSizing(){
+ // Both processors must outlive the editor and its parameter attachments.
+ std::unique_ptr<MasterProcessor> restored;
  auto processor=std::make_unique<MasterProcessor>();processor->set("trim",3.2f);processor->set("zoom",1.5f);
  auto editor=std::unique_ptr<juce::AudioProcessorEditor>(processor->createEditor());
  auto* canvas=editor->findChildWithID("scaledControls");
@@ -74,7 +76,7 @@ void editorSizing(){
  menu->setSelectedId(80,juce::sendNotificationSync);check(editor->getTransform()==hostTransform,"UI scale preserves the host HiDPI transform");editor->setScaleFactor(1);
  menu->setSelectedId(120,juce::sendNotificationSync);juce::MemoryBlock state;processor->getStateInformation(state);editor.reset();
  editor.reset(processor->createEditor());check(editor->getWidth()==1536&&editor->getHeight()==1152,"editor reopening preserves chosen scale");editor.reset();
- auto restored=std::make_unique<MasterProcessor>();restored->setStateInformation(state.getData(),int(state.getSize()));editor.reset(restored->createEditor());check(editor->getWidth()==1536&&editor->getHeight()==1152,"DAW state round-trip preserves window scale");
+ restored=std::make_unique<MasterProcessor>();restored->setStateInformation(state.getData(),int(state.getSize()));editor.reset(restored->createEditor());check(editor->getWidth()==1536&&editor->getHeight()==1152,"DAW state round-trip preserves window scale");
  auto* restoredCanvas=editor->findChildWithID("scaledControls");auto* restoredMenu=restoredCanvas?dynamic_cast<juce::ComboBox*>(restoredCanvas->findChildWithID("uiScale")):nullptr;check(restoredMenu&&restoredMenu->getSelectedId()==120,"restored dropdown matches saved scale");
 }
 void state(){MasterProcessor p;p.set("trim",3.2f);p.set("target",-16.5f);p.set("limit",-2.1f);p.set("mono",1);p.uiWidth=1024;p.uiHeight=768;juce::MemoryBlock b;p.getStateInformation(b);MasterProcessor q;q.setStateInformation(b.getData(),int(b.getSize()));near(q.value("trim"),3.2,.001,"state audio parameter restore");near(q.value("target"),-16.5,.001,"state analysis preference restore");near(q.value("limit"),-2.1,.001,"state true peak limit restore");check(q.value("mono")==1&&q.uiWidth==1024,"state UI and monitoring restore");q.setStateInformation("invalid",7);near(q.value("trim"),3.2,.001,"invalid state rejected");check(p.getLatencySamples()==0,"zero reported latency");}
