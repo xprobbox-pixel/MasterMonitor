@@ -1,12 +1,16 @@
 # MASTER MONITOR
 
-Native JUCE/C++ stereo bus metering and monitoring suite, version 0.1.0. Windows x64 native CI now passes: [executed build, validation and installer results](docs/WINDOWS-VALIDATION.md). Dark hardware-style interface built around the supplied reference and original logo. This is a tested development implementation; it is not a certified measurement instrument or a signed public release. Read [actual validation](docs/VALIDATION.md) before relying on the artifacts.
+Native JUCE/C++ stereo bus metering and monitoring suite, version 0.1.1. Windows x64 native CI now passes: [executed build, validation and installer results](docs/WINDOWS-VALIDATION.md). Dark hardware-style interface built around the supplied reference and original logo. This is a tested development implementation; it is not a certified measurement instrument or a signed public release. Read [actual validation](docs/VALIDATION.md) before relying on the artifacts.
 
 ## Audio behaviour
 
 Input → smoothed Bus Trim → measurement tap → smoothed Mono/Dim → Output. Mono and Dim affect listening AND exported audio. They are not analysis-only switches. Active off or host bypass passes dry unity audio and pauses measurements; resuming starts a new programme. No limiter, normalisation, saturation or added processing latency. The true-peak limit is an indicator only. See [measurement conventions, algorithms and limitations](docs/MEASUREMENT.md).
 
 Defaults: Active on, trim 0 dB, Mono/Dim off; target −14 LUFS, TP limit −1 dBTP, 0 VU=−18 dBFS sine peak. Targets/display preferences are non-automatable; monitoring and trim are automatable. Settings and editor size persist; a DAW project also saves versioned plugin state. Reset Measurements starts a new programme; Peak Hold Reset clears peak/clipping/spectrum holds without clearing loudness.
+
+## Window scaling
+
+Choose **UI SCALE** from 50% to 120% in 10% steps, or drag the visible bottom-right corner for intermediate sizes. The entire interface scales in fixed 4:3 proportions, from 640×480 to 1536×1152 (100% is 1280×960). The dropdown shows the actual percentage after dragging. Window size is saved in user preferences and DAW state, and host HiDPI scaling remains independent. Scope Gain and Scope Zoom affect only the waveform display. At 50%, secondary labels are small; use a larger scale for comfortable reading.
 
 ## Requirements and dependencies
 

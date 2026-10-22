@@ -18,27 +18,56 @@ void HardwareLook::drawRotarySlider(Graphics& g,int x,int y,int w,int h,float po
 }
 void HardwareLook::drawToggleButton(Graphics& g,ToggleButton& b,bool,bool){auto r=b.getLocalBounds().toFloat().reduced(2);bool on=b.getToggleState();panel(g,r);g.setColour(on?green:Colour(0xff53565e));g.drawRoundedRectangle(r,18,1.3f);text(g,b.getButtonText(),r,14,on?green:muted,Justification::centred);}
 void HardwareLook::drawButtonBackground(Graphics& g,Button& b,const Colour&,bool over,bool){g.setColour(over?Colour(0xff393d45):Colour(0xff23262d));g.fillRoundedRectangle(b.getLocalBounds().toFloat().reduced(1),6);g.setColour(Colour(0xff777b87));g.drawRoundedRectangle(b.getLocalBounds().toFloat().reduced(1),6,1);}
+void HardwareLook::drawComboBox(Graphics& g,int w,int h,bool down,int,int,int,int,ComboBox&){
+ auto r=Rectangle<float>(0,0,float(w),float(h)).reduced(1);
+ g.setColour(Colour(down?0xff353944:0xff16191f));g.fillRoundedRectangle(r,7);
+ g.setColour(amber);g.drawRoundedRectangle(r,7,1.2f);
+ Path arrow;float x=float(w)-17,y=float(h)*0.5f;arrow.startNewSubPath(x-4,y-2);arrow.lineTo(x,y+2);arrow.lineTo(x+4,y-2);g.strokePath(arrow,PathStrokeType(1.8f));
+}
+Font HardwareLook::getComboBoxFont(ComboBox&){return Font(FontOptions(14,Font::bold));}
+void HardwareLook::drawCornerResizer(Graphics& g,int w,int h,bool over,bool dragging){
+ g.setColour(over||dragging?cyan:amber);
+ for(int i=4;i<=14;i+=5)g.drawLine(float(w-i),float(h-2),float(w-2),float(h-i),2);
+}
 MasterEditor::MasterEditor(MasterProcessor& p):AudioProcessorEditor(p),processor(p){
+ const int savedWidth=jlimit(640,1536,p.uiWidth.load());
+ controls.setComponentID("scaledControls");controls.setInterceptsMouseClicks(false,true);addAndMakeVisible(controls);
  data=processor.analysis.snapshot();setLookAndFeel(&look);setTooltip("All meters analyse after Bus Trim and before Mono/Dim. LUFS: K-weighted loudness; short-term waits 3 seconds. dBFS: sample amplitude; dBTP: reconstructed peak. Scope and history show L/R amplitude. Width spans 0% mono to 200% anti-phase. Reset for a new programme.");logo=ImageCache::getFromMemory(BinaryData::logo_png,BinaryData::logo_pngSize);
  const char* ids[]{"trim","target","limit","calibration","scopeGain","timebase","zoom"};
- const char* names[]{"BUS TRIM","LOUDNESS TARGET","TRUE-PEAK LIMIT","VU CALIBRATION","SCOPE GAIN","TIMEBASE","DISPLAY ZOOM"};
+ const char* names[]{"BUS TRIM","LOUDNESS TARGET","TRUE-PEAK LIMIT","VU CALIBRATION","SCOPE GAIN","TIMEBASE","SCOPE ZOOM"};
  const char* tips[]{"Output-affecting Bus Trim, before all measurements. Double-click: 0.0 dB.","Loudness Target in LUFS. Difference = measured short-term minus target. Not a processor.","True-Peak Limit in dBTP. Status and latch only; this does not limit audio.","0 VU equals this dBFS sine peak amplitude. Ballistics are approximate, not certified VU.","Graphics only: scope amplitude multiplier. Does not alter audio.","Milliseconds across scope. Rising left-channel zero-crossing trigger; Freeze holds scope and field.","Graphics only: vertical scope and stereo-field zoom. Does not alter audio."};
  const double defaults[]{0,-14,-1,-18,1,20,1};
- for(size_t i=0;i<7;++i){auto& s=knobs[i];s.setSliderStyle(Slider::RotaryHorizontalVerticalDrag);s.setTextBoxStyle(Slider::TextBoxBelow,false,92,22);s.setColour(Slider::textBoxTextColourId,amber);s.setColour(Slider::textBoxOutlineColourId,Colours::transparentBlack);s.setDoubleClickReturnValue(true,defaults[i]);s.setName(names[i]);s.setTooltip(tips[i]);s.setNumDecimalPlacesToDisplay(1);s.setTextValueSuffix(i==0?" dB":i==1?" LUFS":i==2?" dBTP":i==3?" dBFS":i==5?" ms":" x");addAndMakeVisible(s);labels[i].setText(names[i],dontSendNotification);labels[i].setJustificationType(Justification::centred);labels[i].setColour(Label::textColourId,muted);labels[i].setFont(Font(FontOptions(12,Font::bold)));addAndMakeVisible(labels[i]);knobLinks[i]=std::make_unique<AudioProcessorValueTreeState::SliderAttachment>(p.state,ids[i],s);}
+ for(size_t i=0;i<7;++i){auto& s=knobs[i];s.setSliderStyle(Slider::RotaryHorizontalVerticalDrag);s.setTextBoxStyle(Slider::TextBoxBelow,false,92,22);s.setColour(Slider::textBoxTextColourId,amber);s.setColour(Slider::textBoxOutlineColourId,Colours::transparentBlack);s.setDoubleClickReturnValue(true,defaults[i]);s.setName(names[i]);s.setTooltip(tips[i]);s.setNumDecimalPlacesToDisplay(1);s.setTextValueSuffix(i==0?" dB":i==1?" LUFS":i==2?" dBTP":i==3?" dBFS":i==5?" ms":" x");controls.addAndMakeVisible(s);labels[i].setText(names[i],dontSendNotification);labels[i].setJustificationType(Justification::centred);labels[i].setColour(Label::textColourId,muted);labels[i].setFont(Font(FontOptions(12,Font::bold)));controls.addAndMakeVisible(labels[i]);knobLinks[i]=std::make_unique<AudioProcessorValueTreeState::SliderAttachment>(p.state,ids[i],s);}
  const char* bids[]{"dim","mono","active","freeze"};const char* bn[]{"DIM -20 dB","MONO SUM","ACTIVE","FREEZE SCOPE"};
- for(size_t i=0;i<4;++i){auto& b=toggles[i];b.setButtonText(CharPointer_UTF8(bn[i]));b.setName(b.getButtonText());b.setTooltip(i==0?"Output monitor: attenuates listening and exported audio by 20 dB. Measurements are before Dim.":i==1?"Output monitor: M = 0.5 x (L + R) on both outputs. Affects exported audio; measurements remain stereo.":i==2?"Off: unity dry pass-through; analysis pauses. Re-enabling begins a fresh measurement.":"Hold the scope and goniometer graphics. Audio and other measurements continue.");addAndMakeVisible(b);toggleLinks[i]=std::make_unique<AudioProcessorValueTreeState::ButtonAttachment>(p.state,bids[i],b);}
- reset.onClick=[this]{processor.analysis.reset();};peaks.onClick=[this]{processor.analysis.resetPeaks();};reset.setTooltip("Start a new programme: reset loudness, elapsed time, peaks, clipping and visual history.");peaks.setTooltip("Clear sample peak holds, clipping, true-peak maximum/exceedance and spectrum holds. Loudness continues.");addAndMakeVisible(reset);addAndMakeVisible(peaks);
- setResizable(true,true);setResizeLimits(1024,768,1920,1440);getConstrainer()->setFixedAspectRatio(4.0/3.0);setSize(p.uiWidth,p.uiHeight);startTimerHz(30);
+ for(size_t i=0;i<4;++i){auto& b=toggles[i];b.setButtonText(CharPointer_UTF8(bn[i]));b.setName(b.getButtonText());b.setTooltip(i==0?"Output monitor: attenuates listening and exported audio by 20 dB. Measurements are before Dim.":i==1?"Output monitor: M = 0.5 x (L + R) on both outputs. Affects exported audio; measurements remain stereo.":i==2?"Off: unity dry pass-through; analysis pauses. Re-enabling begins a fresh measurement.":"Hold the scope and goniometer graphics. Audio and other measurements continue.");controls.addAndMakeVisible(b);toggleLinks[i]=std::make_unique<AudioProcessorValueTreeState::ButtonAttachment>(p.state,bids[i],b);}
+ reset.onClick=[this]{processor.analysis.reset();};peaks.onClick=[this]{processor.analysis.resetPeaks();};reset.setTooltip("Start a new programme: reset loudness, elapsed time, peaks, clipping and visual history.");peaks.setTooltip("Clear sample peak holds, clipping, true-peak maximum/exceedance and spectrum holds. Loudness continues.");controls.addAndMakeVisible(reset);controls.addAndMakeVisible(peaks);
+ uiScale.setComponentID("uiScale");uiScale.setName("Plugin window UI scale");uiScale.setTooltip("Resize the whole plugin window from 50% to 120%. 100% = 1280 x 960. Drag the amber bottom-right grip for a custom size. Saved with the session; scope zoom is separate.");
+ for(int percent:{50,60,70,80,90,100,110,120})uiScale.addItem(String(percent)+"%",percent);
+ uiScale.setColour(ComboBox::textColourId,amber);uiScale.onChange=[this]{
+  const int percent=uiScale.getSelectedId();if(percent>0)setSize(roundToInt(1280.0*percent/100),roundToInt(960.0*percent/100));
+ };
+ scaleLabel.setText("UI SCALE",dontSendNotification);scaleLabel.setFont(Font(FontOptions(12,Font::bold)));scaleLabel.setColour(Label::textColourId,muted);scaleLabel.attachToComponent(&uiScale,true);
+ controls.addAndMakeVisible(uiScale);controls.addAndMakeVisible(scaleLabel);
+ setResizable(true,true);setResizeLimits(640,480,1536,1152);getConstrainer()->setFixedAspectRatio(4.0/3.0);
+ for(auto* child:getChildren())if(dynamic_cast<ResizableCornerComponent*>(child)){child->setComponentID("windowResizer");child->setName("Drag to resize plugin window");}
+ setSize(savedWidth,roundToInt(savedWidth*0.75));updateScaleReadout();startTimerHz(30);
 }
 MasterEditor::~MasterEditor(){setLookAndFeel(nullptr);}
 void MasterEditor::timerCallback(){data=processor.analysis.snapshot();repaint(juce::Rectangle<float>(0,120,1280,696).transformedBy(juce::AffineTransform::scale(getWidth()/1280.0f,getHeight()/960.0f)).getSmallestIntegerContainer());repaint(juce::Rectangle<float>(950,850,295,90).transformedBy(juce::AffineTransform::scale(getWidth()/1280.0f,getHeight()/960.0f)).getSmallestIntegerContainer());}
 void MasterEditor::resized(){
- float sx=getWidth()/1280.0f,sy=getHeight()/960.0f;
- auto place=[&](Component& c,int x,int y,int w,int h){c.setBounds(roundToInt(x*sx),roundToInt(y*sy),roundToInt(w*sx),roundToInt(h*sy));};
+ controls.setBounds(0,0,1280,960);
+ controls.setTransform(AffineTransform::scale(getWidth()/1280.0f,getHeight()/960.0f));
+ auto place=[](Component& c,int x,int y,int w,int h){c.setBounds(x,y,w,h);};
  for(int i=0;i<3;++i)place(toggles[size_t(i)],755+i*164,44,155,46);
  place(toggles[3],468,550,142,32);place(reset,29,780,192,28);place(peaks,231,780,172,28);
  for(int i=0;i<7;++i){place(labels[size_t(i)],27+i*130,832,128,20);place(knobs[size_t(i)],40+i*130,854,102,87);}
- processor.uiWidth=getWidth();processor.uiHeight=getHeight();drawStatic();
+ place(uiScale,1088,778,150,30);
+ processor.uiWidth=getWidth();processor.uiHeight=getHeight();updateScaleReadout();drawStatic();
+}
+void MasterEditor::updateScaleReadout(){
+ const double percent=100.0*getWidth()/1280;
+ for(int preset:{50,60,70,80,90,100,110,120})if(getWidth()==roundToInt(1280.0*preset/100)&&getHeight()==roundToInt(960.0*preset/100)){uiScale.setSelectedId(preset,dontSendNotification);return;}
+ uiScale.setText("Custom "+String(percent,1)+"%",dontSendNotification);
 }
 void MasterEditor::drawStatic(){
  background=Image(Image::RGB,getWidth(),getHeight(),true);Graphics g(background);g.addTransform(AffineTransform::scale(getWidth()/1280.0f,getHeight()/960.0f));
@@ -49,6 +78,7 @@ void MasterEditor::drawStatic(){
  const char* titles[]{"SHORT-TERM LOUDNESS","INTEGRATED LOUDNESS","SAMPLE PEAKS  |  dBFS","TRUE PEAK"};for(int i=0;i<4;++i)text(g,titles[i],{float(38+308*i),140,280,24},16,i==1?amber:muted);
  text(g,"TWIN VU METERS",{40,289,340,28},18);text(g,"16-BAND SPECTRUM",{654,289,360,28},18);text(g,"OSCILLOSCOPE  |  L / R",{40,550,340,26},18);text(g,"STEREO FIELD",{654,550,340,26},18);
  grid(g,{40,589,566,160});grid(g,{654,590,270,160});text(g,"OUTPUT MONITOR CONTROLS AFFECT RENDERS",{425,784,550,20},12,muted);
+ text(g,"DRAG CORNER TO RESIZE",{1050,934,190,14},10,muted,Justification::centredRight);
  grid(g,{957,854,281,72});text(g,"10-SECOND AMPLITUDE HISTORY",{954,830,290,21},12,cyan);
 }
 void MasterEditor::paint(Graphics& original){

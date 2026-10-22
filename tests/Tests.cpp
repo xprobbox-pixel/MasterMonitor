@@ -1,4 +1,4 @@
-#include "Processor.h"
+#include "Editor.h"
 #include <iostream>
 #include <random>
 #include <fstream>
@@ -44,10 +44,43 @@ void communication(){
  p->analysis.resetPeaks();for(int i=0;i<200;++i){if(std::isinf(p->analysis.snapshot().hold[0]))break;std::this_thread::sleep_for(std::chrono::milliseconds(5));}check(std::isinf(p->analysis.snapshot().hold[0]),"peak reset publishes while transport idle");
  p->analysis.reset();for(int i=0;i<200;++i){if(p->analysis.snapshot().seconds==0)break;std::this_thread::sleep_for(std::chrono::milliseconds(5));}check(p->analysis.snapshot().seconds==0,"measurement reset publishes while transport idle");p->releaseResources();
 }
+void editorSizing(){
+ auto processor=std::make_unique<MasterProcessor>();processor->set("trim",3.2f);processor->set("zoom",1.5f);
+ auto editor=std::unique_ptr<juce::AudioProcessorEditor>(processor->createEditor());
+ auto* canvas=editor->findChildWithID("scaledControls");
+ auto* menu=canvas?dynamic_cast<juce::ComboBox*>(canvas->findChildWithID("uiScale")):nullptr;
+ check(editor->isResizable()&&menu!=nullptr,"host resize enabled and UI Scale dropdown available");
+ if(!menu)return;
+ for(int percent:{50,60,70,80,90,100,110,120}){
+  menu->setSelectedId(percent,juce::sendNotificationSync);
+  check(editor->getWidth()==juce::roundToInt(1280.0*percent/100)&&editor->getHeight()==juce::roundToInt(960.0*percent/100),"UI scale preset resizes editor to requested dimensions");
+  near(canvas->getTransform().mat00,percent/100.0,.001,"all child controls scale with the window");
+ }
+ near(processor->value("trim"),3.2,.001,"UI scaling does not change audio trim");near(processor->value("zoom"),1.5,.001,"window scaling independent of scope zoom");
+ editor->setSize(1408,1056);check(menu->getSelectedId()==110,"host resizing synchronises preset dropdown");
+ editor->setSize(1440,1080);check(menu->getSelectedId()==0&&menu->getText().contains("112.5"),"custom drag size reports actual percentage");
+ auto* grip=editor->findChildWithID("windowResizer");check(grip&&grip->isVisible()&&grip->getRight()==editor->getWidth()&&grip->getBottom()==editor->getHeight(),"visible resize grip anchored to editor corner");
+ if(grip){
+  auto drag=[&](juce::Point<float> delta){
+   auto now=juce::Time::getCurrentTime();auto event=[&](juce::Point<float> point,bool dragged){return juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(),point,juce::ModifierKeys(juce::ModifierKeys::leftButtonModifier),0,0,0,0,0,grip,grip,now,{12,12},now,1,dragged);};
+   grip->mouseDown(event({12,12},false));grip->mouseDrag(event(juce::Point<float>{12,12}+delta,true));grip->mouseUp(event(juce::Point<float>{12,12}+delta,true));
+  };
+  int width=editor->getWidth();drag({128,96});check(editor->getWidth()>width,"actual JUCE corner mouse drag enlarges window");
+  near(double(editor->getWidth())/editor->getHeight(),4.0/3,.002,"drag preserves 4:3 proportions");
+  drag({-10000,-10000});check(editor->getWidth()==640&&editor->getHeight()==480,"corner drag enforces 50 percent minimum");
+  drag({10000,10000});check(editor->getWidth()<=1536&&editor->getHeight()<=1152,"corner drag enforces 120 percent maximum");
+ }
+ menu->setSelectedId(120,juce::sendNotificationSync);editor->setScaleFactor(1.5f);auto hostTransform=editor->getTransform();
+ menu->setSelectedId(80,juce::sendNotificationSync);check(editor->getTransform()==hostTransform,"UI scale preserves the host HiDPI transform");editor->setScaleFactor(1);
+ menu->setSelectedId(120,juce::sendNotificationSync);juce::MemoryBlock state;processor->getStateInformation(state);editor.reset();
+ editor.reset(processor->createEditor());check(editor->getWidth()==1536&&editor->getHeight()==1152,"editor reopening preserves chosen scale");editor.reset();
+ auto restored=std::make_unique<MasterProcessor>();restored->setStateInformation(state.getData(),int(state.getSize()));editor.reset(restored->createEditor());check(editor->getWidth()==1536&&editor->getHeight()==1152,"DAW state round-trip preserves window scale");
+ auto* restoredCanvas=editor->findChildWithID("scaledControls");auto* restoredMenu=restoredCanvas?dynamic_cast<juce::ComboBox*>(restoredCanvas->findChildWithID("uiScale")):nullptr;check(restoredMenu&&restoredMenu->getSelectedId()==120,"restored dropdown matches saved scale");
+}
 void state(){MasterProcessor p;p.set("trim",3.2f);p.set("target",-16.5f);p.set("limit",-2.1f);p.set("mono",1);p.uiWidth=1024;p.uiHeight=768;juce::MemoryBlock b;p.getStateInformation(b);MasterProcessor q;q.setStateInformation(b.getData(),int(b.getSize()));near(q.value("trim"),3.2,.001,"state audio parameter restore");near(q.value("target"),-16.5,.001,"state analysis preference restore");near(q.value("limit"),-2.1,.001,"state true peak limit restore");check(q.value("mono")==1&&q.uiWidth==1024,"state UI and monitoring restore");q.setStateInformation("invalid",7);near(q.value("trim"),3.2,.001,"invalid state rejected");check(p.getLatencySamples()==0,"zero reported latency");}
 int main(int argc,char** argv){
  if(argc==4&&std::string(argv[1])=="--analyze"){
   double rate=std::stod(argv[3]);mm::Analyzer a;a.prepare(rate);std::ifstream file(argv[2],std::ios::binary);std::array<float,512> block{};while(file){file.read(reinterpret_cast<char*>(block.data()),sizeof(block));auto count=file.gcount()/sizeof(float)/2;if(count)a.consume(block.data(),size_t(count));}
   std::cout<<"{\"integrated\":"<<a.result.integrated<<",\"true_peak\":"<<a.result.truePeak<<"}\n";return 0;
  }
- juce::ScopedJuceInitialiser_GUI gui;routing();meters();communication();state();std::cout<<checks<<" checks; "<<failures<<" failures\n";return failures?1:0;}
+ juce::ScopedJuceInitialiser_GUI gui;routing();meters();communication();state();editorSizing();std::cout<<checks<<" checks; "<<failures<<" failures\n";return failures?1:0;}

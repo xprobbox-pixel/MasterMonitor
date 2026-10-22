@@ -10,5 +10,8 @@ int main(int argc,char** argv){
  for(int i=0;i<2000&&p.analysis.snapshot().seconds<3.199;++i)std::this_thread::sleep_for(std::chrono::milliseconds(5));
  auto editor=std::unique_ptr<juce::AudioProcessorEditor>(p.createEditor());
  for(auto size:{juce::Point<int>{1280,960},{1024,768}}){editor->setSize(size.x,size.y);save(*editor,"UI-"+juce::String(size.x)+".png");}
+ auto* canvas=editor->findChildWithID("scaledControls");auto* menu=canvas?dynamic_cast<juce::ComboBox*>(canvas->findChildWithID("uiScale")):nullptr;
+ if(!menu)return 2;
+ for(int percent:{50,80,100,120}){menu->setSelectedId(percent,juce::sendNotificationSync);save(*editor,"UI-scale-"+juce::String(percent)+".png");}
  p.releaseResources();std::cout<<"Rendered actual editor: startup and 1280/1024 synthetic-signal snapshots\n";
 }

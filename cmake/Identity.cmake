@@ -1,5 +1,5 @@
 # Development identities: replace for a commercial release, preserving plugin codes afterwards.
-set(MM_VERSION 0.1.0)
+set(MM_VERSION 0.1.1)
 set(MM_WINDOWS_APP_ID "com.mastermonitor.dev")
 set(MM_MANUFACTURER "Master Monitor Development")
 set(MM_BUNDLE_ID "com.mastermonitor.dev")
