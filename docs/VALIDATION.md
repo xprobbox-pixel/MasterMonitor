@@ -7,7 +7,7 @@ MASTER MONITOR 0.1.0, development identity. This report records executed checks,
 | Platform | Source / build setup | Built binaries | Installer | Signing | Executed validation |
 |---|---|---|---|---|---|
 | macOS arm64 + x86_64 universal | Implemented | VST3, AU, standalone; both slices verified | Native selectable PKG generated | Bundles ad hoc signed and verified; PKG unsigned; not notarised | 261 deterministic checks per architecture, pluginval level 5 per architecture, strict auval per architecture; 9 FFmpeg reference fixtures; default/minimum UI inspection; standalone startup; package contents/choices verified |
-| Windows x64 | CMake target/preset, PowerShell scripts, Inno definition and native CI supplied | Not built here | EXE not generated here | Not performed | Not executed; no Windows environment or connected CI runner available |
+| Windows x64 | Source, presets, scripts and native CI executed | VST3 and standalone built with MSVC | EXE generated, installed and uninstalled on clean runner | Unsigned | 261 checks, pluginval level 5, UI snapshots, startup and install/uninstall checks passed; see WINDOWS-VALIDATION.md |
 
 ## Host and dependencies actually used
 
@@ -31,7 +31,7 @@ cmake -S outputs/MasterMonitor -B work/build -G Ninja \
 cmake --build work/build --parallel 6
 ```
 
-Configure, initial compilation and subsequent source revision build logs are in `release/validation/`. The compiler emitted benign warnings for a redundant standalone macro, the ignored JUCE splash flag, empty optional ARA/LV2 object files and libebur128's ARM denormal fallback. These did not prevent compilation or validation. No Windows compiler, Inno Setup execution or native CI run was performed in this session.
+Configure, initial compilation and subsequent source revision build logs are in `release/validation/`. The compiler emitted benign warnings for a redundant standalone macro, the ignored JUCE splash flag, empty optional ARA/LV2 object files and libebur128's ARM denormal fallback. These did not prevent compilation or validation. The initial macOS delivery did not execute Windows builds. The subsequent native Windows CI run passed; see [Windows validation](WINDOWS-VALIDATION.md) for its environment, executable artifacts and evidence.
 
 ## Deterministic suite: 261 checks, zero failures, on each architecture
 
@@ -63,16 +63,16 @@ This is a limited comparison against a trusted implementation. A full published 
 
 Actual JUCE editor snapshots were rendered at **1280×960** and **1024×768**. Signal snapshots use a real 3.2-second generated stereo multitone fed through the processor and worker; this is not simulated meter activity. Startup was also captured.
 
-Visual inspection found and corrected Latin-1 interpretation of UTF-8 separator labels, repeated units and a snapshot utility that appended to existing PNGs. Final images were overwritten correctly and re-inspected at both sizes. No control overlaps or clipped essential readouts were found. Spectrum secondary labels are compact at minimum size; default size is clearer. All numerical controls retain native editable text boxes and accessible names. Screen-reader behaviour, every host scaling factor, Windows rendering and interactive device-settings UI remain untested.
+Visual inspection found and corrected Latin-1 interpretation of UTF-8 separator labels, repeated units and a snapshot utility that appended to existing PNGs. Final images were overwritten correctly and re-inspected at both sizes. No control overlaps or clipped essential readouts were found. Spectrum secondary labels are compact at minimum size; default size is clearer. All numerical controls retain native editable text boxes and accessible names. Screen-reader behaviour, every host scaling factor, interactive device-settings UI remain untested. Windows snapshots were subsequently rendered and inspected in the native CI follow-up.
 
 ## Installer/package verification
 
 Native Apple `pkgbuild` generated component packages; `productbuild` generated the final selectable PKG. `installer -showChoicesXML` confirmed its choices. `pkgutil --expand-full` succeeded. Each extracted executable SHA-256 matched the separately delivered signed payload, and PackageInfo locations matched `/Library/Audio/Plug-Ins/VST3`, `/Library/Audio/Plug-Ins/Components` and `/Applications`.
 
-All three bundle executables were verified to contain arm64 and x86_64. Packaging applied ad hoc signatures and `codesign --verify --deep --strict` passed for each bundle. This is not Developer ID signing. `pkgutil --check-signature` reports **no signature**. Native `spctl --assess --type install` returned **3 / rejected / source=no usable signature**, as expected for this development package. Signing and notarisation branches were not executed. No privileged installation, upgrade, uninstall or actual Inno Setup execution was performed.
+All three bundle executables were verified to contain arm64 and x86_64. Packaging applied ad hoc signatures and `codesign --verify --deep --strict` passed for each bundle. This is not Developer ID signing. `pkgutil --check-signature` reports **no signature**. Native `spctl --assess --type install` returned **3 / rejected / source=no usable signature**, as expected for this development package. Signing and notarisation branches were not executed. No macOS system installation, upgrade or uninstall was performed. Windows Inno Setup compilation, installation and uninstall subsequently passed in the native CI follow-up.
 
 The build/package scripts were corrected during execution for Apple's `lipo` input argument order and macOS Bash 3.2 empty-array behaviour. Final PKG generation and payload checks passed after those fixes. Native signing/CI scripts are supplied but their credential-dependent branches remain unverified.
 
 ## Release work still required
 
-Run the Windows native CI job and examine its VST3/standalone/Inno artifacts and pluginval results. Exercise real DAWs and standalone device settings/listening, installer installation/upgrade/uninstall on clean machines, real HiDPI host scaling, extended performance/overflow and metering conformance material. Set a real manufacturer/distribution identity, resolve source/asset/JUCE licensing, provide signing credentials, sign and notarise, then repeat final release validation. Until those checks pass, treat these artifacts as development builds.
+Windows native CI subsequently built, tested and packaged successfully; see [the follow-up report](WINDOWS-VALIDATION.md). Exercise real DAWs and standalone device settings/listening, installer installation/upgrade/uninstall on clean machines, real HiDPI host scaling, extended performance/overflow and metering conformance material. Set a real manufacturer/distribution identity, resolve source/asset/JUCE licensing, provide signing credentials, sign and notarise, then repeat final release validation. Until those checks pass, treat these artifacts as development builds.
