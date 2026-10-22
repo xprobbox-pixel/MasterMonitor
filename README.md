@@ -1,6 +1,6 @@
 # MASTER MONITOR
 
-Native JUCE/C++ stereo bus metering and monitoring suite, version 0.1.1. Windows x64 native CI now passes: [executed build, validation and installer results](docs/WINDOWS-VALIDATION.md). Dark hardware-style interface built around the supplied reference and original logo. This is a tested development implementation; it is not a certified measurement instrument or a signed public release. Read [actual validation](docs/VALIDATION.md) before relying on the artifacts.
+Native JUCE/C++ stereo bus metering and monitoring suite, version 0.1.1. [Version 0.1.1 native build, scaling validation and installer results](docs/SCALING-0.1.1.md). Windows x64 and macOS Universal native CI both pass. Dark hardware-style interface built around the supplied reference and original logo. This is a tested development implementation; it is not a certified measurement instrument or a signed public release. Read [actual validation](docs/VALIDATION.md) before relying on the artifacts.
 
 ## Audio behaviour
 
