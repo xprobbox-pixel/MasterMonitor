@@ -1,0 +1,135 @@
+name: Native build and validation
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Native platform to build
+        type: choice
+        default: all
+        options: [all, windows, macos]
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON((github.event_name == 'workflow_dispatch' && inputs.platform == 'windows') && '["windows-2022"]' || (github.event_name == 'workflow_dispatch' && inputs.platform == 'macos') && '["macos-14"]' || '["macos-14","windows-2022"]') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      MM_NO_USER_SETTINGS: '1'
+      MM_APP_SIGN: ${{ secrets.MM_APP_SIGN }}
+      MM_INSTALLER_SIGN: ${{ secrets.MM_INSTALLER_SIGN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install build tools
+        run: python -m pip install cmake==3.31.6 ninja==1.11.1.4
+      - name: Install Inno Setup
+        if: runner.os == 'Windows'
+        run: choco install innosetup --no-progress -y
+      - name: Import optional macOS signing and notary credentials
+        if: runner.os == 'macOS'
+        env:
+          CERT: ${{ secrets.MAC_CERTIFICATES_P12_BASE64 }}
+          PASSWORD: ${{ secrets.MAC_CERTIFICATES_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.MAC_KEYCHAIN_PASSWORD }}
+          NOTARY_KEY: ${{ secrets.NOTARY_KEY_P8_BASE64 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+        run: |
+          if [[ -n "$CERT" ]]; then
+            printf '%s' "$CERT" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+            security create-keychain -p "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/build.keychain-db"
+            security set-keychain-settings -lut 21600 "$RUNNER_TEMP/build.keychain-db"
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/build.keychain-db"
+            security import "$RUNNER_TEMP/cert.p12" -P "$PASSWORD" -A -t cert -f pkcs12 -k "$RUNNER_TEMP/build.keychain-db"
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -k "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/build.keychain-db"
+            security list-keychains -d user -s "$RUNNER_TEMP/build.keychain-db" "$HOME/Library/Keychains/login.keychain-db"
+            rm "$RUNNER_TEMP/cert.p12"
+          fi
+          if [[ -n "$NOTARY_KEY" ]]; then
+            printf '%s' "$NOTARY_KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+            xcrun notarytool store-credentials mm-ci --key "$RUNNER_TEMP/notary.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER"
+            echo 'MM_NOTARY_PROFILE=mm-ci' >> "$GITHUB_ENV"
+            rm "$RUNNER_TEMP/notary.p8"
+          fi
+      - name: Import optional Windows signing certificate
+        if: runner.os == 'Windows'
+        env:
+          CERT: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        shell: pwsh
+        run: |
+          if ($env:CERT) {
+            $signtool = Get-ChildItem "${env:ProgramFiles(x86)}/Windows Kits/10/bin/*/x64/signtool.exe" | Sort-Object FullName | Select-Object -Last 1
+            if (-not $signtool) { throw 'Windows SDK signing tool missing' }
+            $signtool.DirectoryName >> $env:GITHUB_PATH
+            $path = Join-Path $env:RUNNER_TEMP 'signing.pfx'
+            [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:CERT))
+            $cert = Import-PfxCertificate -FilePath $path -CertStoreLocation Cert:\CurrentUser\My -Password (ConvertTo-SecureString $env:PASSWORD -AsPlainText -Force)
+            "MM_WIN_CERT_THUMBPRINT=$($cert.Thumbprint)" >> $env:GITHUB_ENV
+            Remove-Item $path
+          }
+      - name: Build test and package macOS universal
+        if: runner.os == 'macOS'
+        run: bash scripts/build-macos.sh
+      - name: Build and test Windows x64
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -Force -ItemType Directory release/validation | Out-Null
+          Start-Transcript -Path release/validation/windows-build.txt
+          try { ./scripts/build-windows.ps1 -SkipPackage } finally { Stop-Transcript }
+      - name: Render Windows editor and smoke-test standalone
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & './build/windows-x64/MMRender_artefacts/Release/MMRender.exe' "$PWD/release/validation"
+          if ($LASTEXITCODE -ne 0) { throw 'Editor render failed' }
+          $app = Start-Process -FilePath "$PWD/build/windows-x64/MasterMonitor_artefacts/Release/Standalone/MASTER MONITOR.exe" -PassThru -RedirectStandardOutput "$PWD/release/validation/standalone-output.txt" -RedirectStandardError "$PWD/release/validation/standalone-error.txt"
+          try {
+            Start-Sleep -Seconds 4
+            $app.Refresh()
+            if ($app.HasExited) { throw "Standalone exited prematurely: $($app.ExitCode)" }
+            'PASS: standalone four-second startup smoke (no audio device/listening test)' | Set-Content release/validation/standalone-smoke.txt
+          } finally { if (-not $app.HasExited) { Stop-Process -Id $app.Id -Force } }
+      - name: Download pluginval macOS 1.0.3
+        if: runner.os == 'macOS'
+        run: |
+          curl -fL https://github.com/Tracktion/pluginval/releases/download/v1.0.3/pluginval_macOS.zip -o pluginval.zip
+          unzip -q pluginval.zip -d validator
+          validator/pluginval.app/Contents/MacOS/pluginval --strictness-level 5 --validate "build/mac-universal/MasterMonitor_artefacts/Release/VST3/MASTER MONITOR.vst3" > release/validation/pluginval.txt 2>&1
+          mkdir -p "$HOME/Library/Audio/Plug-Ins/Components"
+          ditto "release/macos/MASTER MONITOR.component" "$HOME/Library/Audio/Plug-Ins/Components/MASTER MONITOR.component"
+          killall -9 AudioComponentRegistrar || true
+          auval -strict -v aufx Mmon MmDv > release/validation/auval.txt 2>&1
+      - name: Validate Windows plugin
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://github.com/Tracktion/pluginval/releases/download/v1.0.3/pluginval_Windows.zip -OutFile pluginval.zip
+          Expand-Archive pluginval.zip validator
+          & ./validator/pluginval.exe --strictness-level 5 --validate 'build/windows-x64/MasterMonitor_artefacts/Release/VST3/MASTER MONITOR.vst3' 2>&1 | Tee-Object -FilePath release/validation/pluginval.txt
+          if ($LASTEXITCODE -ne 0) { throw 'pluginval failed' }
+      - name: Generate Windows EXE installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/package-windows.ps1
+      - name: Install verify and uninstall on clean Windows runner
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/validate-windows-installer.ps1
+      - name: Final checksums
+        if: always()
+        run: python scripts/manifest.py release
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: MASTER-MONITOR-${{ runner.os }}
+          path: release
